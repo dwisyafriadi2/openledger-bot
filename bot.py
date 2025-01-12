@@ -23,7 +23,6 @@ def read_proxy(file_path="proxylist.txt"):
         return None
 
 def make_request(url, token, proxy=None):
-    """Sends a GET request to the specified URL using the provided token and optional proxy."""
     headers = {
         "accept": "application/json, text/plain, */*",
         "accept-encoding": "gzip, deflate, br, zstd",
@@ -35,6 +34,8 @@ def make_request(url, token, proxy=None):
 
     try:
         response = requests.get(url, headers=headers, proxies=proxies)
+        print(f"Response Status Code: {response.status_code}")
+        print(f"Response Content: {response.text}")  # Debugging line
         if response.status_code == 200:
             return response.json()
         elif response.status_code == 420:
@@ -46,6 +47,7 @@ def make_request(url, token, proxy=None):
     except requests.RequestException as e:
         print(f"An error occurred: {e}")
         return None
+
 
 def check_referrer(token, proxy):
     """Checks if the referrer_id is null."""
