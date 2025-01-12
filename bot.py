@@ -25,7 +25,6 @@ def read_proxy(file_path="proxylist.txt"):
 def make_request(url, token, proxy=None):
     headers = {
         "accept": "application/json, text/plain, */*",
-        "accept-encoding": "gzip, deflate, br, zstd",
         "accept-language": "en-US,en;q=0.9",
         "authorization": f"Bearer {token}",
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
@@ -35,7 +34,7 @@ def make_request(url, token, proxy=None):
     try:
         response = requests.get(url, headers=headers, proxies=proxies)
         print(f"Response Status Code: {response.status_code}")
-        print(f"Response Content: {response.text}")  # Debugging line
+        print(f"Response Content (raw): {response.content}")  # Print raw content for debugging
         if response.status_code == 200:
             return response.json()
         elif response.status_code == 420:
