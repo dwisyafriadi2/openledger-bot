@@ -2,15 +2,41 @@ import requests
 import time
 import os
 
-def read_token(file_path="token.txt"):
-    """Reads the authorization token from the specified file."""
+def read_tokens(file_path="token.txt"):
+    """Reads multiple authorization tokens from the specified file."""
     try:
         with open(file_path, "r") as file:
-            token = file.read().strip()
-        return token
+            tokens = [line.strip() for line in file if line.strip()]
+        return tokens
     except FileNotFoundError:
         print(f"Error: {file_path} not found.")
-        return None
+        return []
+
+def process_token(token, proxy):
+    """Processes each token for the required tasks."""
+    print(f"\n--- Processing Token: {token} ---")
+    print("\n--- Checking Referrer ID ---")
+    if not check_referrer(token, proxy):
+        return
+
+    print("\n--- Claiming Reward Node ---")
+    claim_reward(token, proxy)
+
+    print("\n--- Fetching Claim Details ---")
+    claimed = claim_details(token, proxy)
+
+    try:
+        while True:
+            print("\n--- Fetching Real-time Reward Data ---")
+            reward_realtime(token, proxy)
+            print("\n--- Fetching Reward History ---")
+            reward_history(token, proxy)
+            print("\n--- Fetching Reward Info ---")
+            reward_info(token, proxy)
+            print("Looping processes... Press Ctrl + C to exit.")
+            time.sleep(10)  # Add a short delay between loops
+    except KeyboardInterrupt:
+        print("\nExiting loop for this token. Moving to next token.")
 
 def read_proxy(file_path="proxylist.txt"):
     """Reads a proxy from the specified file. If empty, return None."""
@@ -150,34 +176,17 @@ def main():
     token_file = "token.txt"
     proxy_file = "proxylist.txt"
 
-    token = read_token(token_file)
+    tokens = read_tokens(token_file)
     proxy = read_proxy(proxy_file)
 
-    if token:
-        print("\n--- Checking Referrer ID ---")
-        if not check_referrer(token, proxy):
-            return
+    if not tokens:
+        print("No authorization tokens found. Please check your token file.")
+        return
 
-        print("\n--- Claiming Reward Node ---")
-        claim_reward(token, proxy)
+    for token in tokens:
+        process_token(token, proxy)
 
-        print("\n--- Fetching Claim Details ---")
-        claimed = claim_details(token, proxy)
-
-        try:
-            while True:
-                print("\n--- Fetching Real-time Reward Data ---")
-                reward_realtime(token, proxy)
-                print("\n--- Fetching Reward History ---")
-                reward_history(token, proxy)
-                print("\n--- Fetching Reward Info ---")
-                reward_info(token, proxy)
-                print("Looping processes... Press Ctrl + C to exit.")
-                time.sleep(10)  # Add a short delay between loops
-        except KeyboardInterrupt:
-            print("\nExiting loop. Goodbye!")
-    else:
-        print("Authorization token is missing. Please check your token file.")
+    print("All tokens have been processed.")
 
 if __name__ == "__main__":
     main()
