@@ -5,34 +5,30 @@ import random
 import requests
 from websocket import WebSocketApp
 
-# Load token from file
-def read_token(file_path="token.txt"):
-    try:
-        with open(file_path, "r") as file:
-            return file.read().strip()
-    except FileNotFoundError:
-        print(f"Error: {file_path} not found.")
-        return None
+# Configure proxies to support SOCKS5
+def configure_proxy(proxy):
+    if proxy and proxy.startswith("socks5"):
+        return {
+            "http": proxy,
+            "https": proxy
+        }
+    return None
 
-# Load proxy from file
-def read_proxy(file_path="proxylist.txt"):
+def read_tokens_and_proxies(token_file="token.txt", proxy_file="proxylist.txt"):
     try:
-        with open(file_path, "r") as file:
-            proxy = file.read().strip()
-        return proxy if proxy else None
-    except FileNotFoundError:
-        print(f"Error: {file_path} not found.")
-        return None
+        with open(token_file, "r") as tf, open(proxy_file, "r") as pf:
+            tokens = [line.strip() for line in tf if line.strip()]
+            proxies = [line.strip() for line in pf if line.strip()]
+            if len(tokens) > len(proxies):
+                print("Warning: More tokens than proxies. Some tokens will not use a proxy.")
+            return tokens, proxies
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        return [], []
 
-# Define the WebSocket URL dynamically using the token
-def get_websocket_url():
-    token = read_token()
-    if not token:
-        print("Token not found. Exiting.")
-        exit(1)
+def get_websocket_url(token):
     return f"wss://apitn.openledger.xyz/ws/v1/orch?authToken={token}"
 
-# Load address from file
 def read_address(file_path="address.txt"):
     try:
         with open(file_path, "r") as file:
@@ -41,25 +37,16 @@ def read_address(file_path="address.txt"):
         print(f"Error: {file_path} not found.")
         return ""
 
-# Daily check-in logic
-def daily_check_in():
-    token = read_token()
-    proxy = read_proxy()
-    if not token:
-        print("Token not found. Cannot perform daily check-in.")
-        return
-
+def daily_check_in(token, proxy=None):
     headers = {"Authorization": f"Bearer {token}"}
-    proxies = {"http": proxy, "https": proxy} if proxy else None
+    proxies = configure_proxy(proxy)
 
-    # Check claim details
     claim_details_url = "https://rewardstn.openledger.xyz/api/v1/claim_details"
     try:
         response = requests.get(claim_details_url, headers=headers, proxies=proxies)
         response.raise_for_status()
         data = response.json()
         if data.get("status") == "SUCCESS" and not data["data"].get("claimed"):
-            # Attempt to claim the reward
             claim_reward_url = "https://rewardstn.openledger.xyz/api/v1/claim_reward"
             claim_response = requests.get(claim_reward_url, headers=headers, proxies=proxies)
             if claim_response.status_code == 200:
@@ -72,17 +59,10 @@ def daily_check_in():
     except requests.RequestException as e:
         print(f"Error during daily check-in: {e}")
 
-# Fetch Identity from workers API
-def fetch_identity():
-    token = read_token()
-    proxy = read_proxy()
-    if not token:
-        print("Token not found. Cannot fetch identity.")
-        return None
-
+def fetch_identity(token, proxy=None):
     url = "https://apitn.openledger.xyz/api/v1/users/workers"
     headers = {"Authorization": f"Bearer {token}"}
-    proxies = {"http": proxy, "https": proxy} if proxy else None
+    proxies = configure_proxy(proxy)
     try:
         response = requests.get(url, headers=headers, proxies=proxies)
         response.raise_for_status()
@@ -96,7 +76,43 @@ def fetch_identity():
         print(f"Error fetching Identity: {e}")
         return None
 
-# Define the heartbeat payload
+def fetch_total_heartbeats(token, proxy=None):
+    url = "https://rewardstn.openledger.xyz/api/v1/reward_realtime"
+    headers = {"Authorization": f"Bearer {token}"}
+    proxies = configure_proxy(proxy)
+    try:
+        response = requests.get(url, headers=headers, proxies=proxies)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("status") == "SUCCESS" and data.get("data"):
+            return int(data["data"][0]["total_heartbeats"])
+        else:
+            print("Failed to fetch total heartbeats.")
+            return 0
+    except requests.RequestException as e:
+        print(f"Error fetching total heartbeats: {e}")
+        return 0
+
+def fetch_reward_info(token, proxy=None):
+    url = "https://rewardstn.openledger.xyz/api/v1/reward"
+    headers = {"Authorization": f"Bearer {token}"}
+    proxies = configure_proxy(proxy)
+    try:
+        response = requests.get(url, headers=headers, proxies=proxies)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("status") == "SUCCESS" and data.get("data"):
+            reward_data = data["data"]
+            print("--- Reward Information ---")
+            print(f"Total Points: {reward_data.get('totalPoint')}, Current Points: {reward_data.get('point')}, Name: {reward_data.get('name')}, End Date: {reward_data.get('endDate')}")
+            return float(reward_data.get("point", 0)), float(reward_data.get("totalPoint", 0))
+        else:
+            print("Failed to fetch reward info.")
+            return 0, 0
+    except requests.RequestException as e:
+        print(f"Error fetching reward info: {e}")
+        return 0, 0
+
 def create_heartbeat_payload(identity, owner_address):
     return {
         "message": {
@@ -118,70 +134,18 @@ def create_heartbeat_payload(identity, owner_address):
         "workerID": identity
     }
 
-# Fetch total heartbeats from the reward API
-def fetch_total_heartbeats():
-    token = read_token()
-    proxy = read_proxy()
-    if not token:
-        print("Token not found. Cannot fetch total heartbeats.")
-        return 0
-
-    url = "https://rewardstn.openledger.xyz/api/v1/reward_realtime"
-    headers = {"Authorization": f"Bearer {token}"}
-    proxies = {"http": proxy, "https": proxy} if proxy else None
-    try:
-        response = requests.get(url, headers=headers, proxies=proxies)
-        response.raise_for_status()
-        data = response.json()
-        if data.get("status") == "SUCCESS" and data.get("data"):
-            return int(data["data"][0]["total_heartbeats"])
-        else:
-            print("Failed to fetch total heartbeats.")
-            return 0
-    except requests.RequestException as e:
-        print(f"Error fetching total heartbeats: {e}")
-        return 0
-
-# Fetch reward information from the reward API
-def fetch_reward_info():
-    token = read_token()
-    proxy = read_proxy()
-    if not token:
-        print("Token not found. Cannot fetch reward info.")
-        return 0, 0
-
-    url = "https://rewardstn.openledger.xyz/api/v1/reward"
-    headers = {"Authorization": f"Bearer {token}"}
-    proxies = {"http": proxy, "https": proxy} if proxy else None
-    try:
-        response = requests.get(url, headers=headers, proxies=proxies)
-        response.raise_for_status()
-        data = response.json()
-        if data.get("status") == "SUCCESS" and data.get("data"):
-            reward_data = data["data"]
-            print("--- Reward Information ---")
-            print(f"Total Points: {reward_data.get('totalPoint')}, Current Points: {reward_data.get('point')}, Name: {reward_data.get('name')}, End Date: {reward_data.get('endDate')}")
-            return float(reward_data.get("point", 0)), float(reward_data.get("totalPoint", 0))
-        else:
-            print("Failed to fetch reward info.")
-            return 0, 0
-    except requests.RequestException as e:
-        print(f"Error fetching reward info: {e}")
-        return 0, 0
-
-# Define WebSocket callbacks
-def on_open(ws):
+def on_open(ws, token, proxy):
     print("Connected to WebSocket.")
 
     def send_heartbeat():
-        identity = fetch_identity()
+        identity = fetch_identity(token, proxy)
         owner_address = read_address()
         if not identity or not owner_address:
             print("Missing identity or owner address. Cannot send heartbeat.")
             ws.close()
             return
 
-        current_points, _ = fetch_reward_info()
+        current_points, _ = fetch_reward_info(token, proxy)
 
         while True:
             try:
@@ -189,18 +153,16 @@ def on_open(ws):
                 ws.send(json.dumps(payload))
                 print("Sent heartbeat:", payload)
 
-                # Fetch total heartbeats after sending a heartbeat
-                total_heartbeats = fetch_total_heartbeats()
+                total_heartbeats = fetch_total_heartbeats(token, proxy)
                 combined_points = current_points + total_heartbeats
                 print(f"Current Points: {current_points} + Total Heartbeats: {total_heartbeats} = Total Points: {combined_points}")
 
-                time.sleep(30)  # Send heartbeat every 30 seconds
+                time.sleep(30)
             except Exception as e:
                 print(f"Error during heartbeat process: {e}")
                 ws.close()
                 break
 
-    # Start a thread to send heartbeats periodically
     threading.Thread(target=send_heartbeat, daemon=True).start()
 
 def on_message(ws, message):
@@ -208,31 +170,35 @@ def on_message(ws, message):
 
 def on_error(ws, error):
     print("WebSocket error:", error)
-    print("Attempting to reconnect...")
-    time.sleep(5)
-    main()  # Reconnect WebSocket
 
 def on_close(ws, close_status_code, close_msg):
     print("WebSocket closed. Code:", close_status_code, "Message:", close_msg)
-    print("Attempting to reconnect...")
-    time.sleep(5)
-    main()  # Reconnect WebSocket
 
-# Main function to connect to the WebSocket
-def main():
-    daily_check_in()  # Perform daily check-in before starting WebSocket
-
-    websocket_url = get_websocket_url()
+def start_worker(token, proxy):
+    daily_check_in(token, proxy)
+    websocket_url = get_websocket_url(token)
     ws = WebSocketApp(
         websocket_url,
-        on_open=on_open,
+        on_open=lambda ws: on_open(ws, token, proxy),
         on_message=on_message,
         on_error=on_error,
         on_close=on_close
     )
-
-    # Run WebSocket connection
     ws.run_forever()
+
+def main():
+    tokens, proxies = read_tokens_and_proxies()
+    threads = []
+
+    for i, token in enumerate(tokens):
+        proxy = proxies[i] if i < len(proxies) else None
+        thread = threading.Thread(target=start_worker, args=(token, proxy), daemon=True)
+        threads.append(thread)
+        thread.start()
+        time.sleep(20)  # Delay between starting WebSocket connections
+
+    for thread in threads:
+        thread.join()
 
 if __name__ == "__main__":
     main()
